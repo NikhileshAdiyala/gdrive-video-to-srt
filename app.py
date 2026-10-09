@@ -63,9 +63,9 @@ with st.sidebar:
     if "Local" in transcription_engine:
         model_size = st.selectbox(
             "Whisper Model Size",
-            ["base", "tiny", "small", "medium"],
+            ["base", "tiny", "small", "medium", "large-v3"],
             index=0,
-            help="'tiny' and 'base' are fastest and lightest on memory. 'small' provides higher accuracy."
+            help="'tiny' and 'base' are fastest. 'medium' and 'large-v3' offer highest accuracy on Macs with 8GB+ RAM."
         )
         groq_api_key = None
     else:
@@ -104,24 +104,47 @@ with st.sidebar:
 
 
 # Main Page Header
-st.markdown('<div class="main-header">🎬 Google Drive Video to SRT Subtitles</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Paste a shareable Google Drive video link to extract audio, generate accurate timestamps, and get your downloadable .SRT file.</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🎬 Video to SRT Subtitles Generator</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Give any video file directly or paste a Google Drive link — audio is extracted automatically using ffmpeg and transcribed with Whisper.</div>', unsafe_allow_html=True)
 
-# Input Box
-gdrive_url = st.text_input(
-    "Google Drive Video Link or File ID",
-    placeholder="https://drive.google.com/file/d/1A2B3C4D5E.../view?usp=sharing",
-    help="Ensure the video sharing permission is set to 'Anyone with the link can view'."
-)
+tab_local, tab_gdrive = st.tabs(["📁 Local Video File (Drag & Drop)", "🔗 Google Drive Link"])
+
+with tab_local:
+    uploaded_file = st.file_uploader(
+        "Drop your video file here (MP4, MOV, MKV, AVI, WebM, etc.)",
+        type=["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "mp3", "wav", "m4a"],
+        help="Accepts heavy raw video directly — no prior audio conversion needed!"
+    )
+    btn_local = st.button("🚀 Generate Subtitles from Local File", use_container_width=True, key="btn_local")
+
+with tab_gdrive:
+    gdrive_url = st.text_input(
+        "Google Drive Video Link or File ID",
+        placeholder="https://drive.google.com/file/d/1A2B3C4D5E.../view?usp=sharing",
+        help="Ensure the video sharing permission is set to 'Anyone with the link can view'."
+    )
+    btn_gdrive = st.button("🚀 Generate Subtitles from Google Drive", use_container_width=True, key="btn_gdrive")
 
 col_info1, col_info2 = st.columns([1, 1])
 with col_info1:
-    st.caption("💡 Supports: MP4, MOV, MKV, AVI, WebM stored on Google Drive.")
+    st.caption("💡 Works with raw video (MP4, MOV, MKV, etc.) — audio extracted in seconds via ffmpeg.")
 with col_info2:
-    st.caption("🔒 Output files are processed securely in temporary storage and cleaned up.")
+    st.caption("🔒 All processing runs locally/privately in temporary storage with auto-cleanup.")
 
-# Action Button
-if st.button("🚀 Generate Subtitles (.SRT)", use_container_width=True):
+# Processing Trigger
+should_process = False
+mode = None
+video_input = None
+
+if btn_local:
+    if not uploaded_file:
+        st.warning("⚠️ Please select or drop a video file first.")
+    else:
+        should_process = True
+        mode = "local"
+        video_input = uploaded_file
+
+elif btn_gdrive:
     if not gdrive_url:
         st.warning("⚠️ Please provide a valid Google Drive video URL or File ID.")
     else:
@@ -129,95 +152,110 @@ if st.button("🚀 Generate Subtitles (.SRT)", use_container_width=True):
         if not file_id:
             st.error("❌ Could not extract a valid Google Drive File ID. Please check the URL format.")
         else:
-            status_container = st.container()
-            progress_bar = st.progress(0)
-            
-            with tempfile.TemporaryDirectory() as tmpdir:
-                try:
-                    # Step 1: Download Video
-                    status_container.info(f"⏳ Step 1/4: Downloading video from Google Drive (ID: `{file_id}`)...")
-                    progress_bar.progress(15)
-                    video_path = download_from_gdrive(file_id, output_dir=tmpdir)
-                    
-                    video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-                    status_container.info(f"✅ Video downloaded ({video_size_mb:.1f} MB).")
-                    progress_bar.progress(35)
+            should_process = True
+            mode = "gdrive"
+            video_input = file_id
 
-                    # Step 2: Extract Audio via ffmpeg
-                    status_container.info("⏳ Step 2/4: Extracting optimized audio track (16kHz mono PCM) via ffmpeg...")
-                    audio_path = os.path.join(tmpdir, "extracted_audio.wav")
-                    if not extract_audio_from_video(video_path, audio_path):
-                        # Fallback: Whisper can take raw video if ffmpeg extraction fails
-                        audio_path = video_path
+if should_process:
+    status_container = st.container()
+    progress_bar = st.progress(0)
 
-                    progress_bar.progress(50)
-                    status_container.info("✅ Audio extracted.")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            # Step 1: Ingest Video
+            if mode == "local":
+                base_name = os.path.splitext(uploaded_file.name)[0]
+                status_container.info(f"⏳ Step 1/4: Loading local file `{uploaded_file.name}`...")
+                progress_bar.progress(15)
+                video_path = os.path.join(tmpdir, uploaded_file.name)
+                with open(video_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                file_id = None
+            else:
+                base_name = f"subtitles_{video_input}"
+                status_container.info(f"⏳ Step 1/4: Downloading video from Google Drive (ID: `{video_input}`)...")
+                progress_bar.progress(15)
+                video_path = download_from_gdrive(video_input, output_dir=tmpdir)
+                file_id = video_input
 
-                    # Step 3: Transcription
-                    status_container.info(f"⏳ Step 3/4: Generating transcription with Whisper ({'Cloud Turbo' if 'Cloud' in transcription_engine else model_size})...")
-                    
-                    if "Cloud" in transcription_engine:
-                        if not groq_api_key:
-                            raise ValueError("Groq API Key is required for Cloud Turbo mode. Enter it in the sidebar or switch to Local Whisper.")
-                        srt_content, segments = transcribe_cloud_whisper(
-                            audio_path=audio_path,
-                            api_key=groq_api_key,
-                            language=selected_lang_code
-                        )
-                    else:
-                        srt_content, segments = transcribe_local_whisper(
-                            audio_path=audio_path,
-                            model_size=model_size,
-                            language=selected_lang_code
-                        )
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            status_container.info(f"✅ Video ready ({video_size_mb:.1f} MB).")
+            progress_bar.progress(35)
 
-                    progress_bar.progress(85)
-                    status_container.info(f"✅ Transcription complete! Generated {len(segments)} timed subtitle segments.")
+            # Step 2: Extract Audio via ffmpeg
+            status_container.info("⏳ Step 2/4: Extracting optimized audio track (16kHz mono PCM) via ffmpeg...")
+            audio_path = os.path.join(tmpdir, "extracted_audio.wav")
+            if not extract_audio_from_video(video_path, audio_path):
+                # Fallback: Whisper can take raw video if ffmpeg extraction fails
+                audio_path = video_path
 
-                    # Step 4: Save local SRT and optional Drive Upload
-                    srt_file_name = f"subtitles_{file_id}.srt"
-                    local_srt_path = os.path.join(tmpdir, srt_file_name)
-                    with open(local_srt_path, "w", encoding="utf-8") as f:
-                        f.write(srt_content)
+            progress_bar.progress(50)
+            status_container.info("✅ Audio track extracted in seconds.")
 
-                    drive_result = None
-                    if auto_upload_drive:
-                        status_container.info("⏳ Step 4/4: Uploading SRT back to Google Drive...")
-                        drive_result = upload_srt_to_gdrive(
-                            srt_file_path=local_srt_path,
-                            original_video_file_id=file_id,
-                            service_account_info_or_path=service_account_json
-                        )
-                        if drive_result and drive_result.get("web_link"):
-                            status_container.success(f"🎉 SRT uploaded to Google Drive: [Open in Drive]({drive_result['web_link']})")
-                        else:
-                            status_container.warning("⚠️ Could not upload directly to Google Drive (Service Account credentials missing or invalid). You can still download the file below.")
-                    else:
-                        progress_bar.progress(100)
+            # Step 3: Transcription
+            engine_label = "Cloud Turbo (Groq)" if "Cloud" in transcription_engine else f"Local Whisper ({model_size})"
+            status_container.info(f"⏳ Step 3/4: Transcribing speech with Whisper ({engine_label})...")
 
-                    progress_bar.progress(100)
-                    st.success("🎉 Subtitle generation completed successfully!")
+            if "Cloud" in transcription_engine:
+                if not groq_api_key:
+                    raise ValueError("Groq API Key is required for Cloud Turbo mode. Enter it in the sidebar or switch to Local Whisper.")
+                srt_content, segments = transcribe_cloud_whisper(
+                    audio_path=audio_path,
+                    api_key=groq_api_key,
+                    language=selected_lang_code
+                )
+            else:
+                srt_content, segments = transcribe_local_whisper(
+                    audio_path=audio_path,
+                    model_size=model_size,
+                    language=selected_lang_code
+                )
 
-                    # Results View
-                    res_col1, res_col2 = st.columns([1, 1])
-                    with res_col1:
-                        st.download_button(
-                            label="📥 Download .SRT File",
-                            data=srt_content,
-                            file_name=srt_file_name,
-                            mime="text/plain",
-                            use_container_width=True
-                        )
+            progress_bar.progress(85)
+            status_container.info(f"✅ Transcription complete! Generated {len(segments)} timed subtitle segments.")
 
-                    with res_col2:
-                        if drive_result and drive_result.get("web_link"):
-                            st.link_button("🔗 View in Google Drive", drive_result["web_link"], use_container_width=True)
+            # Step 4: Save local SRT and optional Drive Upload
+            srt_file_name = f"{base_name}.srt"
+            local_srt_path = os.path.join(tmpdir, srt_file_name)
+            with open(local_srt_path, "w", encoding="utf-8") as f:
+                f.write(srt_content)
 
-                    # Subtitles Viewer
-                    st.subheader("📝 Subtitles Preview & Editor")
-                    st.text_area("SubRip (.srt) Output", value=srt_content, height=350)
+            drive_result = None
+            if mode == "gdrive" and auto_upload_drive and file_id:
+                status_container.info("⏳ Step 4/4: Uploading SRT back to Google Drive...")
+                drive_result = upload_srt_to_gdrive(
+                    srt_file_path=local_srt_path,
+                    original_video_file_id=file_id,
+                    service_account_info_or_path=service_account_json
+                )
+                if drive_result and drive_result.get("web_link"):
+                    status_container.success(f"🎉 SRT uploaded to Google Drive: [Open in Drive]({drive_result['web_link']})")
+                else:
+                    status_container.warning("⚠️ Could not upload directly to Google Drive (Service Account credentials missing or invalid). You can still download the file below.")
 
-                except Exception as e:
-                    progress_bar.progress(0)
-                    st.error(f"❌ An error occurred during processing: {str(e)}")
-                    st.exception(e)
+            progress_bar.progress(100)
+            st.success("🎉 Subtitle generation completed successfully!")
+
+            # Results View
+            res_col1, res_col2 = st.columns([1, 1])
+            with res_col1:
+                st.download_button(
+                    label="📥 Download .SRT File",
+                    data=srt_content,
+                    file_name=srt_file_name,
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+            with res_col2:
+                if drive_result and drive_result.get("web_link"):
+                    st.link_button("🔗 View in Google Drive", drive_result["web_link"], use_container_width=True)
+
+            # Subtitles Viewer
+            st.subheader("📝 Subtitles Preview & Editor")
+            st.text_area("SubRip (.srt) Output", value=srt_content, height=350)
+
+        except Exception as e:
+            progress_bar.progress(0)
+            st.error(f"❌ An error occurred during processing: {str(e)}")
+            st.exception(e)

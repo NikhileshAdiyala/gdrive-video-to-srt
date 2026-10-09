@@ -25,16 +25,41 @@ Features:
 
 ---
 
-## 🚀 Running Locally
+## 🍎 Running on macOS (MacBook Air / Mac Studio)
+
+### Option 1: 1-Click Desktop Launcher
+Simply double-click:
+```bash
+run_mac.command
+```
+This automatically initializes a local virtual environment, installs dependencies, and launches the app in your browser at `http://localhost:8501`.
+
+### Option 2: Command-Line (CLI) Direct Video to SRT
+If you have a video file and just want `.srt` directly without opening a browser:
+```bash
+python video_to_srt.py "path/to/my_video.mp4"
+```
+Options:
+```bash
+# High accuracy with larger model (recommended on Mac Studio / Air 16GB+)
+python video_to_srt.py interview.mov --model medium
+
+# Specify language
+python video_to_srt.py film.mp4 --language en
+```
+
+---
+
+## 🚀 Running Locally (Linux / Windows / Manual)
 
 ### 1. Prerequisites
 Ensure you have `ffmpeg` installed on your machine:
 ```bash
-# Ubuntu / Debian
-sudo apt update && sudo apt install -y ffmpeg
-
 # macOS
 brew install ffmpeg
+
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y ffmpeg
 ```
 
 ### 2. Install Dependencies
