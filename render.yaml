@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gdrive-video-to-srt
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PORT
+        value: 8501
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GDRIVE_SERVICE_ACCOUNT_JSON
+        sync: false
