@@ -41,4 +41,4 @@ fi
 # 4. Launch Streamlit Web App
 echo "🚀 Launching application..."
 echo "🌐 Opening http://localhost:8501 in your default browser..."
-streamlit run app.py
+streamlit run app.py --server.maxUploadSize=5120
