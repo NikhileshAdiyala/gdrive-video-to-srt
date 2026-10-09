@@ -12,6 +12,8 @@ Features:
 - ☁️ **Auto-Upload to Google Drive:** Optionally uploads the generated `.srt` directly into the original Google Drive folder alongside the video.
 - 🚀 **Deploy-Ready for Render:** Complete with `Dockerfile` and `render.yaml` for 1-click team deployment.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/NikhileshAdiyala/gdrive-video-to-srt)
+
 ---
 
 ## 🏗️ Architecture: Why Render instead of Vercel?
